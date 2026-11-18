@@ -1,0 +1,10 @@
+{
+  "name": "OnboardIA",
+  "source": "frontend/app/globals.css",
+  "colors": {"primary": "#5746e8", "canvas": "#f5f5fb", "outer": "#dce0eb", "surface": "#ffffff", "ink": "#29283e", "muted": "#716d83"},
+  "typography": {"fontFamily": "Inter", "headline": "28px", "body": "13px", "support": "12px"},
+  "radii": {"card": "14px", "shell": "24px", "button": "9px"},
+  "focus": {"outline": "2px solid #5746e8", "outlineOffset": "3px"},
+  "breakpoints": {"compact": "1200px", "mobile": "720px"},
+  "reducedMotion": true
+}

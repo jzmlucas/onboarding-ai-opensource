@@ -1,0 +1,15 @@
+.env
+.env.*.local
+!.env.example
+node_modules/
+.next/
+dist/
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+backend/storage/*
+!backend/storage/.gitkeep
+.cache/
+.DS_Store

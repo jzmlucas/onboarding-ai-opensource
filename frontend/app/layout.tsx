@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Sidebar, Topbar } from "@/components/Sidebar";
+import { TutorialGuide } from "@/components/TutorialGuide";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -17,6 +18,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             <Topbar />
             {children}
           </div>
+          <TutorialGuide />
         </div>
       </body>
     </html>

@@ -32,6 +32,77 @@ services:
       timeout: 3s
       retries: 15
 
+  evolution-postgres:
+    image: postgres:15-alpine
+    container_name: onboardia-evolution-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${EVOLUTION_POSTGRES_DB:-evolution}
+      POSTGRES_USER: ${EVOLUTION_POSTGRES_USER:-evolution}
+      POSTGRES_PASSWORD: ${EVOLUTION_POSTGRES_PASSWORD:-change-this-evolution-db-password}
+    volumes:
+      - evolution_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${EVOLUTION_POSTGRES_USER:-evolution} -d ${EVOLUTION_POSTGRES_DB:-evolution}"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7
+    container_name: onboardia-evolution
+    restart: unless-stopped
+    environment:
+      SERVER_URL: ${EVOLUTION_SERVER_URL:-http://localhost:8080}
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-change-this-evolution-api-key}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: ${EVOLUTION_DATABASE_URL:-postgresql://evolution:change-this-evolution-db-password@evolution-postgres:5432/evolution?schema=evolution_api}
+      DATABASE_CONNECTION_CLIENT_NAME: onboardia_evolution
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "false"
+      DATABASE_SAVE_DATA_CONTACTS: "false"
+      DATABASE_SAVE_DATA_CHATS: "false"
+      DATABASE_SAVE_DATA_LABELS: "false"
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379/1
+      CACHE_REDIS_PREFIX_KEY: onboardia_evolution
+      CACHE_REDIS_SAVE_INSTANCES: "false"
+      CACHE_LOCAL_ENABLED: "false"
+      WEBHOOK_GLOBAL_ENABLED: "true"
+      WEBHOOK_GLOBAL_URL: "http://frontend:3000/api/evolution/webhook?secret=${EVOLUTION_WEBHOOK_SECRET:-change-this-evolution-webhook-secret}"
+      WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS: "false"
+      WEBHOOK_EVENTS_MESSAGES_UPSERT: "true"
+      LOG_LEVEL: ERROR,WARN,INFO
+      WEBHOOK_EVENTS_QRCODE_UPDATED: "false"
+      WEBHOOK_EVENTS_MESSAGES_SET: "false"
+      WEBHOOK_EVENTS_MESSAGES_EDITED: "false"
+      WEBHOOK_EVENTS_MESSAGES_UPDATE: "false"
+      WEBHOOK_EVENTS_MESSAGES_DELETE: "false"
+      WEBHOOK_EVENTS_SEND_MESSAGE: "false"
+      WEBHOOK_EVENTS_SEND_MESSAGE_UPDATE: "false"
+      WEBHOOK_EVENTS_CONTACTS_SET: "false"
+      WEBHOOK_EVENTS_CONTACTS_UPSERT: "false"
+      WEBHOOK_EVENTS_CONTACTS_UPDATE: "false"
+      WEBHOOK_EVENTS_CHATS_SET: "false"
+      WEBHOOK_EVENTS_CHATS_UPSERT: "false"
+      WEBHOOK_EVENTS_CHATS_UPDATE: "false"
+      WEBHOOK_EVENTS_CHATS_DELETE: "false"
+      WEBHOOK_EVENTS_CONNECTION_UPDATE: "false"
+      CONFIG_SESSION_PHONE_CLIENT: OnboardIA
+      CONFIG_SESSION_PHONE_NAME: Chrome
+      LANGUAGE: pt-BR
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - evolution_instances:/evolution/instances
+    depends_on:
+      evolution-postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   api:
     build:
       context: ./backend
@@ -42,6 +113,13 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://onboardia:change-this-db-password@postgres:5432/onboardia}
       UPLOAD_DIR: /app/storage
       CORS_ORIGINS: ${API_CORS_ORIGINS:-http://localhost:3000}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
+      OLLAMA_AUDIO_MODEL: ${OLLAMA_AUDIO_MODEL:-lfm3-audio:2b}
+      EVOLUTION_API_URL: http://evolution:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-change-this-evolution-api-key}
+      EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-onboardia}
+      WHATSAPP_AUDIO_MAX_MB: ${WHATSAPP_AUDIO_MAX_MB:-20}
     ports:
       - "8000:8000"
     volumes:
@@ -50,6 +128,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      evolution:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/v1/health"]
       interval: 15s
@@ -82,6 +162,11 @@ services:
     restart: unless-stopped
     environment:
       API_INTERNAL_URL: http://api:8000/api/v1
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-change-this-internal-key}
+      EVOLUTION_WEBHOOK_SECRET: ${EVOLUTION_WEBHOOK_SECRET:-change-this-evolution-webhook-secret}
+      EVOLUTION_API_URL: http://evolution:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-change-this-evolution-api-key}
+      EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-onboardia}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
     ports:
@@ -91,6 +176,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      evolution:
+        condition: service_started
 
   ollama:
     image: ollama/ollama:latest
@@ -108,3 +195,5 @@ volumes:
   uploads:
   huggingface_cache:
   ollama_data:
+  evolution_postgres_data:
+  evolution_instances:

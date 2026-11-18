@@ -41,7 +41,7 @@ export default function DashboardPage() {
           <h1 className="page-title">Visão geral</h1>
           <p className="page-description">Acompanhe a implantação dos clientes, identifique pendências e mantenha o onboarding fluindo.</p>
         </div>
-        <Link href="/onboardings/new" className="btn btn-primary"><Plus size={15} /> Novo onboarding</Link>
+        <Link href="/onboardings/new" data-tour="dashboard-create" className="btn btn-primary"><Plus size={15} /> Novo onboarding</Link>
       </div>
 
       {error && <div className="alert alert-error">Não foi possível carregar os indicadores: {error}. Verifique se a API está em execução.</div>}

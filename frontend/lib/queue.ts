@@ -1,11 +1,11 @@
 import { Queue } from "bullmq";
 
 let documentQueue: Queue | null = null;
+let customerIssueQueue: Queue | null = null;
 
-export function getDocumentQueue() {
-  if (documentQueue) return documentQueue;
+function getConnection() {
   const redisUrl = new URL(process.env.REDIS_URL ?? "redis://localhost:6379/0");
-  const connection = {
+  return {
     host: redisUrl.hostname,
     port: Number(redisUrl.port || 6379),
     username: redisUrl.username || undefined,
@@ -14,6 +14,11 @@ export function getDocumentQueue() {
     maxRetriesPerRequest: null,
     ...(redisUrl.protocol === "rediss:" ? { tls: {} } : {}),
   };
+}
+
+export function getDocumentQueue() {
+  if (documentQueue) return documentQueue;
+  const connection = getConnection();
   documentQueue = new Queue("document-processing", {
     connection,
     defaultJobOptions: {
@@ -24,4 +29,18 @@ export function getDocumentQueue() {
     },
   });
   return documentQueue;
+}
+
+export function getCustomerIssueQueue() {
+  if (customerIssueQueue) return customerIssueQueue;
+  customerIssueQueue = new Queue("customer-issue-processing", {
+    connection: getConnection(),
+    defaultJobOptions: {
+      attempts: 4,
+      backoff: { type: "exponential", delay: 5000 },
+      removeOnComplete: 100,
+      removeOnFail: 500,
+    },
+  });
+  return customerIssueQueue;
 }

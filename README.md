@@ -8,9 +8,9 @@ Aplicação de demonstração para equipes de implantação B2B e Customer Succe
 
 Informações de uma implantação podem ficar espalhadas entre arquivos, mensagens e planilhas. O OnboardIA demonstra um lugar para organizar o processo, localizar orientações e identificar itens que precisam de revisão.
 
-Você pode cadastrar empresas, enviar documentos, acompanhar a fila de processamento, consultar trechos relevantes com busca semântica, conferir algumas verificações automáticas de planilhas, receber sugestões de pendências e preparar rascunhos de comunicação.
+Você pode cadastrar empresas, enviar documentos, acompanhar a fila de processamento, consultar trechos relevantes com busca semântica, conferir algumas verificações automáticas de planilhas, receber sugestões de pendências, preparar rascunhos de comunicação e analisar relatos recebidos pelo WhatsApp via Evolution API.
 
-A IA é uma assistente: não aprova cadastros, não altera configurações e não envia mensagens. Uma pessoa deve conferir as respostas, fontes e recomendações antes de agir. Este MVP serve para demonstração técnica e experimentação. Não está pronto para armazenar dados reais ou confidenciais e não substitui uma plataforma de gestão de despesas.
+A IA não aprova cadastros nem altera configurações. No canal WhatsApp conectado, ela pode fazer o atendimento inicial automático, com respostas baseadas no contexto recuperado; analistas podem revisar as conversas, respostas e recomendações no OnboardIA. Este MVP serve para demonstração técnica e experimentação. Não está pronto para armazenar dados reais ou confidenciais e não substitui uma plataforma de gestão de despesas.
 
 ## Requisitos
 
@@ -34,10 +34,11 @@ Se você já recebeu os arquivos do projeto, abra o PowerShell na pasta do proje
 
 No arquivo `.env`, configure:
 
-1. `GEMINI_API_KEY`: chave do Gemini. Se pretende usar somente Ollama, deixe vazia.
+1. `GEMINI_API_KEY`: chave do Gemini para geração de respostas e transcrição de áudio. Se pretende usar somente Ollama, deixe vazia.
 2. `POSTGRES_PASSWORD`: senha local para o banco.
 3. `DATABASE_URL`: substitua a senha dentro da URL pela mesma senha. Exemplo: `postgresql+psycopg://onboardia:minha-senha@postgres:5432/onboardia`.
 4. `INTERNAL_API_KEY`: substitua o valor de exemplo por uma chave aleatória. O worker e a API recebem esse mesmo valor.
+5. `EVOLUTION_API_KEY` e `EVOLUTION_WEBHOOK_SECRET`: configure valores aleatórios. A senha em `EVOLUTION_DATABASE_URL` deve corresponder a `EVOLUTION_POSTGRES_PASSWORD`.
 
 Para o Docker Compose local, mantenha `NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1`, `API_CORS_ORIGINS=http://localhost:3000` e as URLs internas usando os nomes dos serviços como `postgres`, `redis` e `api`. Não publique nem compartilhe o arquivo `.env`.
 
@@ -73,6 +74,30 @@ Abra **Copiloto IA**, selecione o mesmo processo e escreva uma pergunta clara. P
 - “Prepare um rascunho de e-mail pedindo os dados pendentes.”
 
 A busca usa os documentos indexados no processo escolhido e, quando encontra trechos relevantes, mostra as fontes. A resposta gerativa precisa de Gemini ou Ollama. Sem um provedor disponível, extração, indexação e verificações fixas ainda podem funcionar, mas o copiloto ou a análise generativa podem falhar.
+
+### 4. Atendimento inicial pelo WhatsApp
+
+Cada onboarding pode guardar o número WhatsApp do contato do cliente, com código do país, como `+5511999999999`. Configure-o no formulário de cadastro ou no cartão **Canal de atendimento WhatsApp** dentro do processo. Esse número associa a mensagem recebida ao onboarding; a conta conectada à Evolution é o número compartilhado da equipe.
+
+O Docker Compose inclui a Evolution API, seu PostgreSQL e sua configuração de webhook. Depois de iniciar os serviços, abra **Conectar WhatsApp** na navegação lateral e selecione **Gerar QR Code**. A tela cria a instância configurada em `EVOLUTION_INSTANCE` quando necessário, exibe o QR e acompanha o estado até confirmar a conexão. No celular da equipe, abra WhatsApp > **Aparelhos conectados** > **Conectar aparelho** e leia o QR Code. A chave da Evolution fica somente no servidor.
+
+Também é possível conectar uma instância manualmente pelo Swagger em <http://localhost:8080/docs>, usando `POST /instance/create` com `{"instanceName":"onboardia","integration":"WHATSAPP-BAILEYS","qrcode":true}` e a chave `EVOLUTION_API_KEY` no campo `apikey`.
+
+Cadastre o telefone do contato do cliente no onboarding e envie uma mensagem **desse telefone para o número da equipe conectado**. O webhook ignora mensagens enviadas pela própria conta, grupos, remetentes não cadastrados e tipos não suportados; mensagens repetidas são deduplicadas. No Copiloto, escolha o onboarding com WhatsApp cadastrado: a seção **Atendimento pelo WhatsApp** fica abaixo do chat do copiloto e atualiza periodicamente.
+
+Mensagens recebidas entram na fila BullMQ. Áudios passam por transcrição Gemini, com Ollama como fallback local. O atendimento recupera trechos dos documentos daquele onboarding e combina com um resumo persistente da conversa e as mensagens recentes. A IA identifica a dúvida, responde pelo WhatsApp conectado e salva a resposta e a triagem para revisão no onboarding ou na área **Copiloto IA**.
+
+As respostas devem ficar limitadas ao contexto disponível. Quando não houver evidência suficiente, a IA deve dizer que não conseguiu confirmar e pedir esclarecimento, sem inventar políticas, prazos ou ações concluídas. O analista acompanha resumo, categoria, urgência preliminar, impacto, informações a confirmar, recomendações, fontes e memória persistente. A IA não aprova cadastros nem executa ações no sistema.
+
+Para habilitar o fallback local de análise e transcrição, inicie o perfil Ollama e baixe ambos os modelos:
+
+```powershell
+docker compose --profile local-llm up -d ollama
+docker compose exec ollama ollama pull qwen2.5:3b
+docker compose exec ollama ollama pull lfm3-audio:2b
+```
+
+Áudio no fallback local é convertido pelo FFmpeg no container da API. Se os provedores configurados falharem, o relato aparece com status de falha e detalhes para nova investigação pelos logs; nenhuma decisão é tomada automaticamente.
 
 ## Arquivos de demonstração
 
@@ -110,13 +135,14 @@ Para experimentar a busca, envie `manual_onboarding.md` e um ou mais materiais t
 
 ## Gemini e Ollama
 
-Gemini é o provedor principal. Configure `GEMINI_API_KEY` e `GEMINI_MODEL` no `.env`. Uma chave inválida será rejeitada pelo Google.
+Gemini é o provedor principal de respostas e transcrição de áudio. Configure `GEMINI_API_KEY` e `GEMINI_MODEL` no `.env`. Uma chave inválida será rejeitada pelo Google. Para mensagem de texto, Ollama é o fallback de geração; para áudio, o fallback usa `OLLAMA_AUDIO_MODEL` (padrão `lfm3-audio:2b`) e FFmpeg para converter o arquivo recebido.
 
 Como alternativa, o projeto pode iniciar Ollama em um perfil opcional. No PowerShell:
 
 ```powershell
 docker compose --profile local-llm up -d ollama
 docker compose exec ollama ollama pull qwen2.5:3b
+docker compose exec ollama ollama pull lfm3-audio:2b
 docker compose exec ollama ollama list
 ```
 
@@ -128,8 +154,10 @@ Embeddings são independentes do modelo gerador. O modelo E5 multilíngue é bai
 
 - **Frontend:** Next.js, React e TypeScript; contém dashboard, cadastro, Copiloto IA e Base de conhecimento.
 - **API:** FastAPI e Python; cuida dos processos, documentos, extração, embeddings e agentes.
-- **PostgreSQL + pgvector:** guarda os dados e permite busca vetorial.
-- **Redis + BullMQ + worker Node.js:** processam documentos em segundo plano.
+- **PostgreSQL + pgvector:** guarda os dados do OnboardIA e permite busca vetorial. A Evolution tem um PostgreSQL separado para a sessão WhatsApp e mensagens de origem.
+- **Redis + BullMQ + worker Node.js:** processam documentos e atendimentos recebidos em segundo plano.
+- **PostgreSQL:** mantém mensagens, respostas e resumo de memória persistente, isolados por onboarding e telefone do cliente.
+- **Evolution API:** conecta o WhatsApp da equipe, encaminha mensagens recebidas ao webhook protegido e envia respostas iniciais da IA.
 - **Gemini / Ollama:** geram respostas e rascunhos quando estão configurados.
 
 O copiloto encaminha tarefas para agentes de consulta documental, validação, análise de documentos e rascunho de comunicação. Algumas validações de planilha são regras Python fixas e não usam LLM.
@@ -159,7 +187,7 @@ PostgreSQL, Redis, uploads e cache de embeddings usam volumes Docker. **`docker 
 
 - Não há autenticação nem isolamento entre organizações. Não exponha o serviço na internet.
 - Não envie informações pessoais, financeiras ou confidenciais reais.
-- Não há antivírus para uploads, política de retenção, backups automáticos, gestão de segredos de produção, TLS ou controle de acesso por documento.
+- Não há antivírus para uploads, política de retenção de mensagens/áudios e transcrições, backups automáticos, gestão de segredos de produção, TLS ou controle de acesso por documento.
 - A extração de PDF depende de texto selecionável; não há OCR para páginas digitalizadas.
 - As verificações de planilha cobrem poucos padrões, e a IA pode errar ou deixar passar problemas.
 - O copiloto consulta apenas o contexto fornecido e recuperado. Confira as fontes e revise toda recomendação.
@@ -172,6 +200,8 @@ PostgreSQL, Redis, uploads e cache de embeddings usam volumes Docker. **`docker 
 **A API não fica saudável:** veja `docker compose logs --tail=100 postgres api`. Confirme que a senha em `POSTGRES_PASSWORD` é a mesma usada em `DATABASE_URL`. Dentro do Compose, o host do banco é `postgres`, não `localhost`.
 
 **Um arquivo continua na fila:** veja `docker compose logs --tail=100 redis worker api`. Confirme que Redis e worker estão ativos.
+
+**Uma mensagem de WhatsApp não recebeu resposta:** confirme que o telefone do cliente está cadastrado no onboarding e envie a mensagem desse telefone para o número pareado da equipe. Na aba **Copiloto IA**, selecione o onboarding correto e veja o estado de análise e envio em **Atendimento pelo WhatsApp**. Consulte `docker compose logs --tail=100 frontend api worker evolution` para erros de webhook ou envio.
 
 **Falha ao baixar embeddings:** verifique a internet e os logs da API. O cache fica no volume `huggingface_cache`. Para verificar o modelo, execute `docker compose exec api uv run python scripts/check_embeddings.py`; ele deve informar vetores de 384 dimensões. Não remova o volume do PostgreSQL para tentar corrigir o cache de embeddings.
 

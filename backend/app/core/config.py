@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-2.5-flash"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:3b"
+    ollama_audio_model: str = "lfm3-audio:2b"
+    evolution_api_url: str = "http://localhost:8080"
+    evolution_api_key: str | None = None
+    evolution_instance: str = "onboardia"
+    whatsapp_audio_max_mb: int = 20
     embedding_model: str = "intfloat/multilingual-e5-small"
     embedding_dimension: int = 384
     embedding_device: str = "cpu"
@@ -20,6 +25,7 @@ class Settings(BaseSettings):
     chunk_size_tokens: int = 420
     chunk_overlap_tokens: int = 60
     retrieval_top_k: int = 6
+    retrieval_max_distance: float = 0.55
     redis_url: str = "redis://localhost:6379/0"
     internal_api_key: str = "change-this-internal-key"
     upload_dir: Path = Path("./storage")

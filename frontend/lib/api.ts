@@ -6,12 +6,50 @@ export type Onboarding = {
   tax_id: string | null;
   contact_name: string | null;
   contact_email: string | null;
+  contact_whatsapp: string | null;
   description: string | null;
   status: string;
   created_at: string;
   updated_at: string;
   document_count: number;
   open_findings_count: number;
+};
+
+export type CustomerIssue = {
+  id: string;
+  onboarding_id: string;
+  sender_phone: string;
+  sender_name: string | null;
+  message_type: "text" | "audio" | string;
+  original_text: string | null;
+  transcript: string | null;
+  processing_status: "queued" | "processing" | "processed" | "failed" | string;
+  review_status: "open" | "in_review" | "resolved" | "dismissed" | string;
+  title: string | null;
+  summary: string | null;
+  assistant_reply: string | null;
+  reply_status: "pending" | "sending" | "sent" | "failed" | "paused" | string;
+  reply_error: string | null;
+  category: string | null;
+  urgency: "low" | "medium" | "high" | "critical" | string | null;
+  customer_impact: string | null;
+  missing_information: string[];
+  recommendations: string[];
+  source_references: { filename: string; chunk_index: number; excerpt: string }[];
+  transcription_provider: string | null;
+  analysis_provider: string | null;
+  error_message: string | null;
+  received_at: string;
+  processed_at: string | null;
+};
+
+export type CustomerConversation = {
+  id: string;
+  onboarding_id: string;
+  contact_phone: string;
+  memory_summary: string | null;
+  mode: string;
+  updated_at: string;
 };
 
 export type DocumentItem = {

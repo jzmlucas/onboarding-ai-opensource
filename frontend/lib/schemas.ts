@@ -5,6 +5,7 @@ export const onboardingSchema = z.object({
   tax_id: z.string().trim().max(32).optional().or(z.literal("")),
   contact_name: z.string().trim().max(160).optional().or(z.literal("")),
   contact_email: z.string().trim().email("Informe um e-mail válido.").optional().or(z.literal("")),
+  contact_whatsapp: z.string().trim().max(32).optional().or(z.literal("")),
   description: z.string().trim().max(2000).optional().or(z.literal("")),
 });
 

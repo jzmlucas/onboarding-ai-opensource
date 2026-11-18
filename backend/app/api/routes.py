@@ -1,4 +1,5 @@
 import hmac
+import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,9 +10,10 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.database import get_db
-from app.db.models import Document, DocumentChunk, Finding, Onboarding
+from app.db.models import AgentRun, CustomerConversation, CustomerIssue, Document, DocumentChunk, Finding, Onboarding
 from app.schemas.assistant import AssistantRequest, AssistantResponse
 from app.schemas.document import DocumentOut
+from app.schemas.customer_issue import CustomerConversationOut, CustomerIssueOut, CustomerIssueStatusUpdate
 from app.schemas.onboarding import (
     DashboardSummary,
     FindingOut,
@@ -22,6 +24,7 @@ from app.schemas.onboarding import (
 )
 from app.services.agents.document_agent import DocumentAgent
 from app.services.chunking import chunk_text
+from app.services.customer_issue import ingest_evolution_message, process_customer_issue
 from app.services.document_parser import extract_text
 from app.services.embeddings import embed_documents
 from app.services.llm import LLMClient, LLMUnavailableError
@@ -29,6 +32,7 @@ from app.services.orchestrator import Orchestrator
 from app.services.tabular_validation import validate_tabular_file
 
 router = APIRouter(prefix="/api/v1")
+logger = logging.getLogger(__name__)
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".xlsm", ".csv", ".txt", ".md"}
 
 
@@ -145,6 +149,32 @@ def list_documents(onboarding_id: str, db: Session = Depends(get_db)):
     ).all()
 
 
+@router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document(document_id: str, db: Session = Depends(get_db)):
+    document = db.get(Document, document_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Documento não encontrado.")
+
+    file_path = Path(document.file_path)
+    upload_root = settings.upload_dir.resolve()
+    try:
+        file_path.resolve().relative_to(upload_root)
+    except ValueError:
+        file_path = None
+
+    db.delete(document)
+    db.commit()
+
+    if file_path:
+        try:
+            file_path.unlink(missing_ok=True)
+        except OSError:
+            # The DB record and indexed content are already removed. An orphaned
+            # upload can be cleaned up later without blocking the user action.
+            pass
+    return None
+
+
 @router.get("/findings", response_model=list[FindingOut])
 def list_findings(onboarding_id: str, db: Session = Depends(get_db)):
     return db.scalars(
@@ -163,6 +193,102 @@ def update_finding(finding_id: str, payload: FindingStatusUpdate, db: Session = 
     return finding
 
 
+@router.get("/customer-issues", response_model=list[CustomerIssueOut])
+def list_customer_issues(onboarding_id: str, db: Session = Depends(get_db)):
+    if not db.get(Onboarding, onboarding_id):
+        raise HTTPException(status_code=404, detail="Onboarding não encontrado.")
+    return db.scalars(
+        select(CustomerIssue)
+        .where(CustomerIssue.onboarding_id == onboarding_id)
+        .order_by(CustomerIssue.received_at.desc())
+        .limit(100)
+    ).all()
+
+
+@router.get("/customer-conversations", response_model=list[CustomerConversationOut])
+def list_customer_conversations(onboarding_id: str, db: Session = Depends(get_db)):
+    if not db.get(Onboarding, onboarding_id):
+        raise HTTPException(status_code=404, detail="Onboarding não encontrado.")
+    return db.scalars(
+        select(CustomerConversation)
+        .where(CustomerConversation.onboarding_id == onboarding_id)
+        .order_by(CustomerConversation.updated_at.desc())
+        .limit(20)
+    ).all()
+
+
+@router.patch("/customer-issues/{issue_id}", response_model=CustomerIssueOut)
+def update_customer_issue(issue_id: str, payload: CustomerIssueStatusUpdate, db: Session = Depends(get_db)):
+    issue = db.get(CustomerIssue, issue_id)
+    if not issue:
+        raise HTTPException(status_code=404, detail="Relato do cliente não encontrado.")
+    if issue.processing_status != "processed":
+        raise HTTPException(status_code=409, detail="O relato ainda não está pronto para revisão.")
+    issue.review_status = payload.review_status
+    db.commit()
+    db.refresh(issue)
+    return issue
+
+
+@router.post("/customer-issues/{issue_id}/retry", response_model=CustomerIssueOut)
+def retry_customer_issue(issue_id: str, db: Session = Depends(get_db)):
+    issue = db.get(CustomerIssue, issue_id)
+    if not issue:
+        raise HTTPException(status_code=404, detail="Relato do cliente não encontrado.")
+    if issue.processing_status in {"failed", "queued"}:
+        issue.processing_status = "queued"
+        issue.error_message = None
+    elif issue.reply_status == "failed":
+        issue.reply_status = "pending"
+        issue.reply_error = None
+    else:
+        raise HTTPException(status_code=409, detail="Só é possível reenfileirar relatos com falha ou ainda na fila.")
+    db.commit()
+    db.refresh(issue)
+    return issue
+
+
+@router.post("/internal/evolution/webhook")
+def receive_evolution_webhook(
+    payload: dict,
+    x_internal_api_key: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    if not x_internal_api_key or not hmac.compare_digest(x_internal_api_key, settings.internal_api_key):
+        raise HTTPException(status_code=401, detail="Credencial interna inválida.")
+    result = ingest_evolution_message(db, payload)
+    event = str(payload.get("event", "unknown"))[:80]
+    instance = str(payload.get("instance", "unknown"))[:80]
+    if result.get("accepted"):
+        logger.info(
+            "Evolution webhook accepted event=%s instance=%s duplicate=%s issue_id=%s",
+            event, instance, result.get("duplicate", False), result.get("customer_issue_id", ""),
+        )
+    else:
+        logger.warning(
+            "Evolution webhook ignored event=%s instance=%s reason=%s",
+            event, instance, result.get("reason", "unknown"),
+        )
+    return result
+
+
+@router.post("/internal/customer-issues/{issue_id}/process")
+def process_customer_issue_endpoint(
+    issue_id: str,
+    x_internal_api_key: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    if not x_internal_api_key or not hmac.compare_digest(x_internal_api_key, settings.internal_api_key):
+        raise HTTPException(status_code=401, detail="Credencial interna inválida.")
+    issue = db.get(CustomerIssue, issue_id)
+    if not issue:
+        raise HTTPException(status_code=404, detail="Relato do cliente não encontrado.")
+    try:
+        return process_customer_issue(db, issue, LLMClient())
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Falha ao analisar a mensagem recebida. Consulte o status e os logs da API.") from exc
+
+
 @router.post("/assistant/execute", response_model=AssistantResponse)
 def execute_assistant(payload: AssistantRequest, db: Session = Depends(get_db)):
     if payload.onboarding_id and not db.get(Onboarding, payload.onboarding_id):
@@ -176,6 +302,30 @@ def execute_assistant(payload: AssistantRequest, db: Session = Depends(get_db)):
         )
     except LLMUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/assistant/history")
+def assistant_history(onboarding_id: str, limit: int = 30, db: Session = Depends(get_db)):
+    if not db.get(Onboarding, onboarding_id):
+        raise HTTPException(status_code=404, detail="Onboarding não encontrado.")
+    limit = max(1, min(limit, 100))
+    rows = db.scalars(
+        select(AgentRun)
+        .where(AgentRun.onboarding_id == onboarding_id)
+        .order_by(AgentRun.created_at.desc())
+        .limit(limit)
+    ).all()
+    return [
+        {
+            "id": run.id,
+            "message": run.user_message,
+            "answer": run.result_json.get("answer", ""),
+            "sources": run.result_json.get("sources", []),
+            "provider": run.provider,
+            "created_at": run.created_at,
+        }
+        for run in reversed(rows)
+    ]
 
 
 @router.post("/internal/documents/{document_id}/process")

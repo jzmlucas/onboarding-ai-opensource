@@ -19,7 +19,7 @@ export default function OnboardingsPage() {
     <main className="page-content">
       <div className="page-heading">
         <div><h1 className="page-title">Onboardings</h1><p className="page-description">Gerencie os processos de implantação e acompanhe documentos e pendências de cada empresa.</p></div>
-        <Link href="/onboardings/new" className="btn btn-primary"><Plus size={15} /> Novo onboarding</Link>
+        <Link href="/onboardings/new" data-tour="onboardings-create" className="btn btn-primary"><Plus size={15} /> Novo onboarding</Link>
       </div>
       {error && <div className="alert alert-error">{error}. Verifique se a API está em execução.</div>}
       <div className="card">

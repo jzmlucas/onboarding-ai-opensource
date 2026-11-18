@@ -2,8 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Bot, Check, FileText, Paperclip, Send, Sparkles, UploadCloud, X } from "lucide-react";
+import { ArrowLeft, Bot, Check, FileText, Paperclip, Send, Sparkles, Trash2, UploadCloud, X } from "lucide-react";
 import { apiFetch, formatBytes, formatDate, type DocumentItem, type Finding, type Onboarding } from "@/lib/api";
+import { MarkdownMessage } from "@/components/MarkdownMessage";
+import { CustomerIssuesPanel } from "@/components/CustomerIssuesPanel";
+import { WhatsAppChannelCard } from "@/components/WhatsAppChannelCard";
 
 type AssistantReply = { intent: string; agent: string; answer: string; provider: string | null; sources: { filename: string; chunk_index: number; excerpt: string }[]; data: Record<string, unknown>; run_id: string | null };
 type ChatMessage = { role: "assistant" | "user"; text: string; sources?: AssistantReply["sources"]; provider?: string | null };
@@ -25,6 +28,7 @@ export function OnboardingWorkspace({ onboardingId, view = "all" }: { onboarding
   const [findings, setFindings] = useState<Finding[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState("");
   const [assistantError, setAssistantError] = useState("");
   const [question, setQuestion] = useState("");
@@ -45,6 +49,9 @@ export function OnboardingWorkspace({ onboardingId, view = "all" }: { onboarding
 
   useEffect(() => {
     let active = true;
+    apiFetch<{ message: string; answer: string; sources: ChatMessage["sources"]; provider: string | null }[]>(`/assistant/history?onboarding_id=${onboardingId}&limit=30`)
+      .then((history) => { if (active && history.length) setMessages([{ role: "assistant", text: "Olá! Sou o copiloto do OnboardIA. Posso consultar procedimentos, validar este onboarding, analisar documentos ou preparar uma comunicação para o cliente." }, ...history.flatMap((item) => [{ role: "user" as const, text: item.message }, { role: "assistant" as const, text: item.answer, sources: item.sources, provider: item.provider }])]); })
+      .catch(() => undefined);
     refresh().catch((err) => { if (active) setUploadError(err.message); }).finally(() => { if (active) setLoading(false); });
     const timer = window.setInterval(() => { refresh().catch(() => undefined); }, 5000);
     return () => { active = false; window.clearInterval(timer); };
@@ -83,6 +90,18 @@ export function OnboardingWorkspace({ onboardingId, view = "all" }: { onboarding
     catch (err) { setUploadError(err instanceof Error ? err.message : "Não foi possível atualizar a pendência."); }
   }
 
+  async function deleteDocument(document: DocumentItem) {
+    if (!window.confirm(`Remover “${document.filename}”? O arquivo, a indexação e as pendências geradas por ele serão excluídos.`)) return;
+    setUploadError(""); setDeletingDocumentId(document.id);
+    try {
+      const response = await fetch(`/api/documents/${encodeURIComponent(document.id)}`, { method: "DELETE" });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.detail ?? "Não foi possível remover o documento.");
+      await refresh();
+    } catch (err) { setUploadError(err instanceof Error ? err.message : "Não foi possível remover o documento."); }
+    finally { setDeletingDocumentId(null); }
+  }
+
   if (loading) return <div className={view === "all" ? "page-content" : "workspace-content"}><div className="loading" role="status">Carregando processo...</div></div>;
   if (!onboarding) return <div className={view === "all" ? "page-content" : "workspace-content"}><div className="alert alert-error">Não foi possível localizar este onboarding. {uploadError}</div><Link href="/onboardings" className="btn btn-secondary"><ArrowLeft size={14} /> Voltar</Link></div>;
 
@@ -97,6 +116,7 @@ export function OnboardingWorkspace({ onboardingId, view = "all" }: { onboarding
       </div>
       }
       {uploadError && <div className="alert alert-error">{uploadError}</div>}
+      {view === "all" && <WhatsAppChannelCard onboarding={onboarding} />}
       {view !== "copilot" && <div className="stat-grid" style={{ gridTemplateColumns: "repeat(3, minmax(0,1fr))" }}>
         <div className="card stat-card"><div className="stat-top"><span>Documentos recebidos</span><span className="stat-icon"><FileText size={16} /></span></div><div className="stat-value">{documents.length}</div><div className="stat-note">{processedDocs} processado(s) e indexado(s)</div></div>
         <div className="card stat-card"><div className="stat-top"><span>Pendências abertas</span><span className="stat-icon"><X size={16} /></span></div><div className="stat-value">{openFindings.length}</div><div className="stat-note">Itens que precisam de revisão</div></div>
@@ -106,14 +126,14 @@ export function OnboardingWorkspace({ onboardingId, view = "all" }: { onboarding
       }
       <section className={view === "all" ? "detail-grid" : "workspace-grid"}>
         {view !== "copilot" && <div>
-          <div className="card panel">
+          <div className="card panel" data-tour={view === "knowledge" ? "knowledge-destination" : undefined}>
             <div className="panel-heading"><div><h3>Documentos do cliente</h3><span>PDF, DOCX, XLSX, CSV, TXT e Markdown · até 25 MB</span></div><button className="btn btn-secondary" onClick={() => fileRef.current?.click()} disabled={uploading}><Paperclip size={14} /> Adicionar arquivo</button></div>
             <input ref={fileRef} type="file" accept=".pdf,.docx,.xlsx,.xlsm,.csv,.txt,.md" hidden onChange={(event) => uploadFile(event.target.files?.[0])} />
             <div className="upload-zone" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); uploadFile(event.dataTransfer.files?.[0]); }}>
               <UploadCloud size={24} color="#5746e8" style={{ margin: "0 auto" }} /><p>{uploading ? "Enviando e adicionando à fila..." : "Arraste um documento para cá ou selecione um arquivo"}</p><button type="button" className="btn btn-primary" onClick={() => fileRef.current?.click()} disabled={uploading}>{uploading ? "Enviando..." : "Selecionar documento"}</button>
             </div>
             <div style={{ marginTop: 15 }}>
-              {documents.length ? documents.map((doc) => <div className="file-row" key={doc.id}><div className="file-icon"><FileText size={16} /></div><div className="file-info"><div className="file-name">{doc.filename}</div><div className="file-meta">{formatBytes(doc.file_size)} · {formatDate(doc.created_at)}</div>{doc.processing_note && <details className="document-note"><summary>Ver análise</summary><p>{doc.processing_note}</p></details>}{doc.error_message && <details className="document-note error-text"><summary>Ver erro de processamento</summary><p>{doc.error_message}</p></details>}</div><span className={badgeFor(doc.status)}>{docLabels[doc.status] ?? doc.status}</span></div>) : <div className="empty-state"><strong>Nenhum documento enviado</strong>Adicione os arquivos que serão analisados e indexados para consulta.</div>}
+              {documents.length ? documents.map((doc) => <div className="file-row" key={doc.id}><div className="file-icon"><FileText size={16} /></div><div className="file-info"><div className="file-name">{doc.filename}</div><div className="file-meta">{formatBytes(doc.file_size)} · {formatDate(doc.created_at)}</div>{doc.processing_note && <details className="document-note"><summary>Ver análise</summary><p>{doc.processing_note}</p></details>}{doc.error_message && <details className="document-note error-text"><summary>Ver erro de processamento</summary><p>{doc.error_message}</p></details>}</div><span className={badgeFor(doc.status)}>{docLabels[doc.status] ?? doc.status}</span><button type="button" className="btn btn-secondary document-delete" onClick={() => deleteDocument(doc)} disabled={deletingDocumentId !== null} aria-label={`Remover ${doc.filename}`} title="Remover documento">{deletingDocumentId === doc.id ? "Removendo…" : <Trash2 size={14} />}</button></div>) : <div className="empty-state"><strong>Nenhum documento enviado</strong>Adicione os arquivos que serão analisados e indexados para consulta.</div>}
             </div>
           </div>
 
@@ -123,10 +143,10 @@ export function OnboardingWorkspace({ onboardingId, view = "all" }: { onboarding
           </div>
         }</div>}
 
-        {view !== "knowledge" && <div className="card panel chat-box">
+        {view !== "knowledge" && <div className="card panel chat-box" data-tour={view === "copilot" ? "copilot-destination" : undefined}>
           <div className="panel-heading"><div style={{ display: "flex", alignItems: "center", gap: 9 }}><div className="quick-icon" style={{ width: 32, height: 32, margin: 0 }}><Bot size={17} /></div><div><h3>Copiloto OnboardIA</h3><span>Orquestrador multiagente · RAG</span></div></div><span className="badge badge-blue">IA assistiva</span></div>
           <div className="chat-messages" role="log" aria-live="polite" aria-label="Conversa com o copiloto" ref={messagesRef}>
-            {messages.map((message, index) => <div key={index} className={`chat-message ${message.role}`}>{message.text}{message.sources?.length ? <div className="chat-source"><strong>Fontes consultadas</strong>{message.sources.map((source, sourceIndex) => <div key={sourceIndex}>• {source.filename} — trecho {source.chunk_index + 1}</div>)}</div> : null}{message.provider && <div className="chat-source">Modelo: {message.provider === "gemini" ? "Gemini" : "Ollama"}</div>}</div>)}
+            {messages.map((message, index) => <div key={index} className={`chat-message ${message.role}`}><MarkdownMessage content={message.text} />{message.sources?.length ? <div className="chat-source"><strong>Fontes consultadas</strong>{message.sources.map((source, sourceIndex) => <div key={sourceIndex}>• {source.filename} — trecho {source.chunk_index + 1}</div>)}</div> : null}{message.provider && <div className="chat-source">Modelo: {message.provider === "gemini" ? "Gemini" : "Ollama"}</div>}</div>)}
             {sending && <div className="chat-message assistant">Analisando solicitação e selecionando o agente adequado...</div>}
           </div>
           {assistantError && <div role="alert" className="error-text" style={{ marginBottom: 8 }}>{assistantError}</div>}
@@ -134,6 +154,7 @@ export function OnboardingWorkspace({ onboardingId, view = "all" }: { onboarding
           <div className="field-hint" style={{ marginTop: 9 }}>Experimente: “Quais são as pendências?”, “Como funciona a política?” ou “Prepare um e-mail ao cliente”.</div>
         </div>}
       </section>
+      {(view === "all" || view === "copilot") && <CustomerIssuesPanel onboardingId={onboardingId} />}
     </div>
   );
 }

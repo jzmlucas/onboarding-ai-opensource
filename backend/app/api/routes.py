@@ -13,7 +13,7 @@ from app.db.database import get_db
 from app.db.models import AgentRun, CustomerConversation, CustomerIssue, Document, DocumentChunk, Finding, Onboarding
 from app.schemas.assistant import AssistantRequest, AssistantResponse
 from app.schemas.document import DocumentOut
-from app.schemas.customer_issue import CustomerConversationOut, CustomerIssueOut, CustomerIssueStatusUpdate
+from app.schemas.customer_issue import CustomerConversationModeUpdate, CustomerConversationOut, CustomerIssueOut, CustomerIssueStatusUpdate
 from app.schemas.onboarding import (
     DashboardSummary,
     FindingOut,
@@ -207,14 +207,62 @@ def list_customer_issues(onboarding_id: str, db: Session = Depends(get_db)):
 
 @router.get("/customer-conversations", response_model=list[CustomerConversationOut])
 def list_customer_conversations(onboarding_id: str, db: Session = Depends(get_db)):
-    if not db.get(Onboarding, onboarding_id):
+    onboarding = db.get(Onboarding, onboarding_id)
+    if not onboarding:
         raise HTTPException(status_code=404, detail="Onboarding não encontrado.")
-    return db.scalars(
+    conversations = db.scalars(
         select(CustomerConversation)
         .where(CustomerConversation.onboarding_id == onboarding_id)
         .order_by(CustomerConversation.updated_at.desc())
         .limit(20)
     ).all()
+    if conversations:
+        return conversations
+    if not onboarding.contact_whatsapp:
+        return []
+    return [CustomerConversationOut(
+        id=f"pending-{onboarding.id}",
+        onboarding_id=onboarding.id,
+        contact_phone=onboarding.contact_whatsapp,
+        memory_summary=None,
+        mode=onboarding.whatsapp_mode,
+        updated_at=onboarding.updated_at,
+    )]
+
+
+@router.patch("/customer-conversations/{conversation_id}", response_model=CustomerConversationOut)
+def update_customer_conversation_mode(
+    conversation_id: str,
+    payload: CustomerConversationModeUpdate,
+    db: Session = Depends(get_db),
+):
+    if conversation_id.startswith("pending-"):
+        onboarding = db.get(Onboarding, conversation_id.removeprefix("pending-"))
+        if not onboarding:
+            raise HTTPException(status_code=404, detail="Onboarding não encontrado.")
+        if not onboarding.contact_whatsapp:
+            raise HTTPException(status_code=409, detail="Cadastre o WhatsApp do cliente antes de configurar o atendimento.")
+        onboarding.whatsapp_mode = payload.mode
+        db.commit()
+        db.refresh(onboarding)
+        return CustomerConversationOut(
+            id=conversation_id,
+            onboarding_id=onboarding.id,
+            contact_phone=onboarding.contact_whatsapp,
+            memory_summary=None,
+            mode=onboarding.whatsapp_mode,
+            updated_at=onboarding.updated_at,
+        )
+    conversation = db.get(CustomerConversation, conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversa não encontrada.")
+    conversation.mode = payload.mode
+    onboarding = db.get(Onboarding, conversation.onboarding_id)
+    if onboarding:
+        onboarding.whatsapp_mode = payload.mode
+    db.commit()
+    db.refresh(conversation)
+    return conversation
 
 
 @router.patch("/customer-issues/{issue_id}", response_model=CustomerIssueOut)

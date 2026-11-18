@@ -18,6 +18,7 @@ def init_db() -> None:
     # column migration here because this MVP currently has no migration runner.
     with engine.begin() as connection:
         connection.execute(text("ALTER TABLE onboardings ADD COLUMN IF NOT EXISTS contact_whatsapp VARCHAR(20)"))
+        connection.execute(text("ALTER TABLE onboardings ADD COLUMN IF NOT EXISTS whatsapp_mode VARCHAR(24) NOT NULL DEFAULT 'ai_active'"))
         connection.execute(text("CREATE INDEX IF NOT EXISTS ix_onboardings_contact_whatsapp ON onboardings (contact_whatsapp)"))
         connection.execute(text("ALTER TABLE customer_issues ADD COLUMN IF NOT EXISTS conversation_id VARCHAR(36) REFERENCES customer_conversations(id) ON DELETE SET NULL"))
         connection.execute(text("ALTER TABLE customer_issues ADD COLUMN IF NOT EXISTS assistant_reply TEXT"))

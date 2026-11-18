@@ -87,6 +87,8 @@ Cadastre o telefone do contato do cliente no onboarding e envie uma mensagem **d
 
 Mensagens recebidas entram na fila BullMQ. Áudios passam por transcrição Gemini, com Ollama como fallback local. O atendimento recupera trechos dos documentos daquele onboarding e combina com um resumo persistente da conversa e as mensagens recentes. A IA identifica a dúvida, responde pelo WhatsApp conectado e salva a resposta e a triagem para revisão no onboarding ou na área **Copiloto IA**.
 
+No cartão **Atendimento pelo WhatsApp** do Copiloto, o responsável pode alternar o atendimento de cada cliente entre **IA** e **Humano**. Ao ativar **Humano**, o sistema pausa as respostas automáticas no WhatsApp; as mensagens continuam entrando, sendo transcritas quando necessário, analisadas pela IA e registradas no Copiloto, com atualização da memória persistente. O aviso **Atendimento humano ativado** indica que o responsável deve responder ao cliente. Desative o toggle para retomar as respostas automáticas. A configuração fica salva por onboarding e é aplicada também a conversas que começarem depois.
+
 As respostas devem ficar limitadas ao contexto disponível. Quando não houver evidência suficiente, a IA deve dizer que não conseguiu confirmar e pedir esclarecimento, sem inventar políticas, prazos ou ações concluídas. O analista acompanha resumo, categoria, urgência preliminar, impacto, informações a confirmar, recomendações, fontes e memória persistente. A IA não aprova cadastros nem executa ações no sistema.
 
 Para habilitar o fallback local de análise e transcrição, inicie o perfil Ollama e baixe ambos os modelos:
@@ -156,7 +158,7 @@ Embeddings são independentes do modelo gerador. O modelo E5 multilíngue é bai
 - **API:** FastAPI e Python; cuida dos processos, documentos, extração, embeddings e agentes.
 - **PostgreSQL + pgvector:** guarda os dados do OnboardIA e permite busca vetorial. A Evolution tem um PostgreSQL separado para a sessão WhatsApp e mensagens de origem.
 - **Redis + BullMQ + worker Node.js:** processam documentos e atendimentos recebidos em segundo plano.
-- **PostgreSQL:** mantém mensagens, respostas e resumo de memória persistente, isolados por onboarding e telefone do cliente.
+- **PostgreSQL:** mantém mensagens, respostas, modo de atendimento (IA ou humano) e resumo de memória persistente, isolados por onboarding e telefone do cliente.
 - **Evolution API:** conecta o WhatsApp da equipe, encaminha mensagens recebidas ao webhook protegido e envia respostas iniciais da IA.
 - **Gemini / Ollama:** geram respostas e rascunhos quando estão configurados.
 
@@ -201,7 +203,7 @@ PostgreSQL, Redis, uploads e cache de embeddings usam volumes Docker. **`docker 
 
 **Um arquivo continua na fila:** veja `docker compose logs --tail=100 redis worker api`. Confirme que Redis e worker estão ativos.
 
-**Uma mensagem de WhatsApp não recebeu resposta:** confirme que o telefone do cliente está cadastrado no onboarding e envie a mensagem desse telefone para o número pareado da equipe. Na aba **Copiloto IA**, selecione o onboarding correto e veja o estado de análise e envio em **Atendimento pelo WhatsApp**. Consulte `docker compose logs --tail=100 frontend api worker evolution` para erros de webhook ou envio.
+**Uma mensagem de WhatsApp não recebeu resposta:** confirme que o telefone do cliente está cadastrado no onboarding e envie a mensagem desse telefone para o número pareado da equipe. Na aba **Copiloto IA**, selecione o onboarding correto e veja o estado de análise e envio em **Atendimento pelo WhatsApp**. Confira se o toggle está em **IA**; no modo **Humano**, a falta de resposta automática é intencional, mas a análise continua aparecendo no Copiloto. Consulte `docker compose logs --tail=100 frontend api worker evolution` para erros de webhook ou envio.
 
 **Falha ao baixar embeddings:** verifique a internet e os logs da API. O cache fica no volume `huggingface_cache`. Para verificar o modelo, execute `docker compose exec api uv run python scripts/check_embeddings.py`; ele deve informar vetores de 384 dimensões. Não remova o volume do PostgreSQL para tentar corrigir o cache de embeddings.
 

@@ -13,6 +13,7 @@ export function CustomerIssuesPanel({ onboardingId }: { onboardingId: string }) 
   const [conversations, setConversations] = useState<CustomerConversation[]>([]);
   const [error, setError] = useState("");
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [modeUpdatingId, setModeUpdatingId] = useState<string | null>(null);
   const refresh = useCallback(async () => {
     try {
       const [issues, memories] = await Promise.all([
@@ -49,10 +50,26 @@ export function CustomerIssuesPanel({ onboardingId }: { onboardingId: string }) 
     finally { setRetryingId(null); }
   }
 
+  async function toggleHumanMode(conversation: CustomerConversation) {
+    setModeUpdatingId(conversation.id); setError("");
+    try {
+      const updated = await apiFetch<CustomerConversation>(`/customer-conversations/${encodeURIComponent(conversation.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ mode: conversation.mode === "human_active" ? "ai_active" : "human_active" }),
+      });
+      setConversations((current) => current.map((item) => item.id === updated.id ? updated : item));
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível alterar o responsável pelo atendimento."); }
+    finally { setModeUpdatingId(null); }
+  }
+
   return <section className="card panel customer-issues-panel">
-    <div className="panel-heading"><div><h3>Atendimento pelo WhatsApp</h3><span>A IA responde inicialmente com base na conversa e nos documentos deste onboarding. A equipe pode acompanhar o histórico e o envio.</span></div><span>{items.length} mensagem(ns)</span></div>
+    <div className="panel-heading"><div><h3>Atendimento pelo WhatsApp</h3><span>A IA analisa as mensagens e mantém a memória da conversa. O modo de resposta pode ser alternado por conversa.</span></div><span>{items.length} mensagem(ns)</span></div>
     {error && <div className="alert alert-error" role="alert">{error}</div>}
-    {!!conversations.length && <div className="issue-memory"><strong>Memória persistente da conversa</strong>{conversations.map((conversation) => <p key={conversation.id}>{conversation.memory_summary || "A memória será formada conforme o atendimento avança."}</p>)}</div>}
+    {!!conversations.length && <div className="issue-conversations">{conversations.map((conversation) => <div className={`issue-conversation ${conversation.mode === "human_active" ? "is-human" : ""}`} key={conversation.id}>
+      <div className="issue-conversation-heading"><div><strong>{conversation.mode === "human_active" ? "Atendimento humano ativo" : "Atendimento automático por IA"}</strong><span>{conversation.contact_phone}</span><span className="mode-toggle-label">{conversation.mode === "human_active" ? "Humano" : "IA"}</span></div><button type="button" role="switch" aria-checked={conversation.mode === "human_active"} aria-label={`${conversation.mode === "human_active" ? "Desativar" : "Ativar"} atendimento humano para ${conversation.contact_phone}`} className={`mode-toggle ${conversation.mode === "human_active" ? "is-on" : ""}`} onClick={() => void toggleHumanMode(conversation)} disabled={modeUpdatingId !== null}><span /></button></div>
+      {conversation.mode === "human_active" && <div className="alert-warning human-mode-notice" role="status"><strong>Atendimento humano ativado.</strong> As respostas automáticas da IA estão pausadas para este cliente. As mensagens continuam sendo analisadas e registradas no Copiloto.</div>}
+      {conversation.memory_summary && <div className="issue-memory"><strong>Memória persistente da conversa</strong><p>{conversation.memory_summary}</p></div>}
+    </div>)}</div>}
     {items.length === 0 ? <div className="empty-state"><strong>Nenhum relato recebido</strong>Configure o WhatsApp do cliente e conecte a instância da Evolution para acompanhar mensagens por aqui.</div> : items.map((issue) => (
       <article className="customer-issue" key={issue.id}>
         <div className="customer-issue-heading"><div><h4>{issue.title ?? (issue.message_type === "audio" ? "Mensagem de áudio" : "Mensagem recebida")}</h4><span>{issue.sender_name || issue.sender_phone} · {formatDate(issue.received_at)}</span></div><div className="customer-issue-badges"><span className={`badge ${issue.urgency === "critical" || issue.urgency === "high" ? "badge-red" : issue.urgency === "medium" ? "badge-yellow" : "badge-blue"}`}>{urgencyLabels[issue.urgency ?? ""] ?? processingLabels[issue.processing_status]}</span><span className="badge badge-gray">{reviewLabels[issue.review_status] ?? issue.review_status}</span></div></div>

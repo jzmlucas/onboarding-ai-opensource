@@ -30,6 +30,7 @@ class Onboarding(Base):
     contact_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
     contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     contact_whatsapp: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    whatsapp_mode: Mapped[str] = mapped_column(String(24), default="ai_active", nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="in_progress", nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

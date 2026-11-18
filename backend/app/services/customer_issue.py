@@ -102,7 +102,7 @@ def ingest_evolution_message(db: Session, payload: dict[str, Any]) -> dict[str, 
         )
     )
     if not conversation:
-        conversation = CustomerConversation(onboarding_id=onboarding.id, contact_phone=sender_phone)
+        conversation = CustomerConversation(onboarding_id=onboarding.id, contact_phone=sender_phone, mode=onboarding.whatsapp_mode)
         db.add(conversation)
         db.flush()
     legacy_messages = db.scalars(
@@ -320,7 +320,7 @@ DOCUMENTOS DO ONBOARDING:
         issue.title = analysis.title
         issue.summary = analysis.summary
         issue.assistant_reply = analysis.customer_reply.strip()[:2000]
-        issue.reply_status = "pending"
+        issue.reply_status = "pending" if conversation and conversation.mode == "ai_active" else "paused"
         issue.reply_error = None
         issue.category = analysis.category
         issue.urgency = analysis.urgency

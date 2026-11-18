@@ -7,6 +7,7 @@ export type Onboarding = {
   contact_name: string | null;
   contact_email: string | null;
   contact_whatsapp: string | null;
+  whatsapp_mode: "ai_active" | "human_active" | string;
   description: string | null;
   status: string;
   created_at: string;

@@ -30,6 +30,7 @@ class OnboardingUpdate(BaseModel):
     contact_name: str | None = Field(default=None, max_length=160)
     contact_email: str | None = None
     contact_whatsapp: str | None = Field(default=None, max_length=32)
+    whatsapp_mode: str | None = Field(default=None, pattern="^(ai_active|human_active)$")
     description: str | None = Field(default=None, max_length=2000)
     status: str | None = Field(default=None, pattern="^(in_progress|waiting_client|review|completed|paused)$")
 
@@ -53,6 +54,7 @@ class OnboardingOut(BaseModel):
     contact_name: str | None
     contact_email: str | None
     contact_whatsapp: str | None
+    whatsapp_mode: str
     description: str | None
     status: str
     created_at: datetime

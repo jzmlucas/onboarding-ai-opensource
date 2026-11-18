@@ -226,6 +226,22 @@ input, textarea { caret-color: var(--primary); }
 .customer-issues-panel { margin-top: 18px; }
 .issue-memory { margin: 0 0 16px; padding: 13px 15px; border: 1px solid #e4dff7; border-radius: 10px; background: #f7f5ff; color: #514c69; font-size: 12px; }
 .issue-memory p { margin: 7px 0 0; line-height: 1.65; }
+.issue-conversations { display: grid; gap: 12px; margin-bottom: 16px; }
+.issue-conversation { padding: 14px; border: 1px solid #e7e4ef; border-radius: 12px; background: #fcfbff; }
+.issue-conversation.is-human { border-color: #f0d69a; background: #fffdf7; }
+.issue-conversation-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.issue-conversation-heading > div { display: grid; gap: 4px; }
+.issue-conversation-heading strong { color: #353246; font-size: 13px; }
+.issue-conversation-heading span { color: #716d83; font-size: 12px; }
+.mode-toggle { width: 42px; height: 24px; flex: 0 0 auto; position: relative; padding: 0; border: 0; border-radius: 99px; background: #aaa5b6; cursor: pointer; transition: background .2s ease; }
+.mode-toggle > span { width: 18px; height: 18px; position: absolute; top: 3px; left: 3px; border-radius: 50%; background: white; box-shadow: 0 1px 3px #0003; transition: transform .2s ease; }
+.mode-toggle.is-on { background: #c58a16; }
+.mode-toggle.is-on > span { transform: translateX(18px); }
+.mode-toggle:focus-visible { outline: 3px solid #5746e866; outline-offset: 2px; }
+.mode-toggle:disabled { opacity: .55; cursor: wait; }
+.human-mode-notice { margin-top: 12px; }
+.alert-warning { padding: 11px 13px; border: 1px solid #f0d69a; border-radius: 9px; background: #fff7df; color: #76520c; font-size: 12px; line-height: 1.55; }
+.alert-warning strong { margin-right: 4px; }
 .issue-ai-reply { background: #eef8f4; }
 .issue-ai-reply p { margin: 7px 0 0; line-height: 1.65; white-space: pre-wrap; }
 .customer-issue { margin-top: 12px; padding: 16px; border: 1px solid #e9e6f1; border-radius: 12px; background: #fff; }

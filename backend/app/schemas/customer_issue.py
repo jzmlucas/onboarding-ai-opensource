@@ -46,3 +46,7 @@ class CustomerConversationOut(BaseModel):
     memory_summary: str | None
     mode: str
     updated_at: datetime
+
+
+class CustomerConversationModeUpdate(BaseModel):
+    mode: str = Field(pattern="^(ai_active|human_active)$")
